@@ -47,7 +47,7 @@ import {
   type PricingSourceSelections,
 } from '../models/upstream-ratio-sync-helpers'
 import { UpstreamRatioSyncTable } from '../models/upstream-ratio-sync-table'
-import type { PricingSyncModels } from '../types'
+import type { DifferencesMap, PricingSyncModels } from '../types'
 
 const expression = 'tier("base", p * 2 + c * 8 + cr * 0)'
 const differences = {
@@ -77,13 +77,16 @@ const prices: PricingSyncModels = {
     },
   },
 }
-function TableFixture(props: { prices: PricingSyncModels }) {
+function TableFixture(props: {
+  prices: PricingSyncModels
+  differences?: DifferencesMap
+}) {
   const [selectedSources, setSelectedSources] =
     useState<PricingSourceSelections>({})
   return (
     <UpstreamRatioSyncTable
       prices={props.prices}
-      differences={differences}
+      differences={props.differences ?? differences}
       selectedSources={selectedSources}
       isDisabled={false}
       isSyncing={false}
@@ -640,6 +643,50 @@ describe('sync price adjustments', () => {
       adjustSyncPrice({ model_price: Number.MIN_VALUE }, 'divide', 7)
     ).toHaveProperty('error')
   })
+
+  it('stays on the current page when a source is selected on a later page', async () => {
+    const many: PricingSyncModels = {}
+    const manyDifferences: DifferencesMap = {}
+    for (const model of Array.from(
+      { length: 25 },
+      (_, i) => `model-${String(i).padStart(2, '0')}`
+    )) {
+      many[model] = {
+        current: { model_ratio: 1, billing_mode: 'ratio' },
+        upstreams: { upstream: { model_ratio: 2, billing_mode: 'ratio' } },
+      }
+      manyDifferences[model] = {
+        model_ratio: {
+          current: 1,
+          upstreams: { upstream: 2 },
+          confidence: { upstream: true },
+        },
+      }
+    }
+    render(<TableFixture prices={many} differences={manyDifferences} />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Go to next page' }))
+    expect(
+      screen.queryByRole('checkbox', {
+        name: 'Select price for model-00 from upstream',
+      })
+    ).not.toBeInTheDocument()
+    const selection = screen.getByRole('checkbox', {
+      name: 'Select price for model-10 from upstream',
+    })
+    await user.click(selection)
+    expect(selection).toBeChecked()
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Select price for model-11 from upstream',
+      })
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('checkbox', {
+        name: 'Select price for model-00 from upstream',
+      })
+    ).not.toBeInTheDocument()
+  })
 })
 
 async function renderAdjustmentSync(
@@ -1180,15 +1227,13 @@ it('disables both batch shortcuts when the configured exchange rate becomes inva
     })
   )
   await act(async () =>
-    useSystemConfigStore
-      .getState()
-      .setConfig({
-        currency: {
-          ...DEFAULT_CURRENCY_CONFIG,
-          quotaDisplayType: 'CNY',
-          usdExchangeRate: 0,
-        },
-      })
+    useSystemConfigStore.getState().setConfig({
+      currency: {
+        ...DEFAULT_CURRENCY_CONFIG,
+        quotaDisplayType: 'CNY',
+        usdExchangeRate: 0,
+      },
+    })
   )
   expect(
     screen.getByRole('button', { name: /Multiply by exchange rate/ })

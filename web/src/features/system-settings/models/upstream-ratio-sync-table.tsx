@@ -164,6 +164,11 @@ export function UpstreamRatioSyncTable(props: UpstreamRatioSyncTableProps) {
     columns,
     getRowId: (row) => row.model,
     initialPagination: { pageIndex: 0, pageSize: 10 },
+    // Selecting a source rebuilds `filteredRows`, because a selected model with
+    // a matching price becomes visible. The default page reset would then jump
+    // back to page 1 on every checkbox click; the toolbar resets the page itself
+    // when the search text or filters change.
+    autoResetPageIndex: false,
     withFilteredRowModel: false,
     withSortedRowModel: true,
     withFacetedRowModel: false,
